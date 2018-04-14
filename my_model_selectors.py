@@ -77,8 +77,33 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
-
+        best_score = float("inf")
+        best_model = None
+        # The current word data - self.X, has numbr of data rows as the first dimension and the the second dimension /column is features.
+        # number of features
+        num_features = len(self.X[0])
+        # iterate from the min number of components to max number of components+1
+        for num_states in range(self.min_n_components, self.max_n_components+1):
+            try:
+                hmm_model = self.base_model(num_states)
+                # Log of likelihood
+                logL = hmm_model.score(self.X, self.lengths)
+                # Log of number of data elements
+                logN = np.log(len(self.X))
+                # Number of parameters
+                parameters = num_states **2 + (2 * num_features * num_states) - 1
+                # BIC score for current num_states
+                bic_score = (-2 * logL) + (parameters * logN)
+                # lower value of bic_score is better
+                if bic_score < best_score:
+                    # Update the best/least score
+                    best_score =  bic_score
+                    # Assign the hmm_model with num_states number of states as best model
+                    best_model =  hmm_model
+            except:
+                pass
+        # return the model with least/best bic_score
+        return best_model if best_model is not None else self.base_model(self.n_constant)
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -93,8 +118,40 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        # implement model selection based on DIC scores
+        # Initialize
+        best_score = float("-inf")
+        best_model = None
+
+        other_words = []
+        for other_word in self.words:
+            if other_word != self.this_word:
+                other_words.append(other_word)
+
+        # iterate from the min number of components to max number of components+1
+        for num_states in range(self.min_n_components, self.max_n_components+1):
+            try:
+                hmm_model = self.base_model(num_states)
+                # Log of likelihood of the current word
+                logL = hmm_model.score(self.X, self.lengths)   
+                # logL values of all the words other than current word      
+                other_logL = []   
+                for other_word in other_words:
+                    # self.hwords[other_word][0] = other.X, self.hwords[other_word][1] = other.lengths for all the word other than the current word
+                    # append logL values for other_words
+                    other_logL.append(hmm_model.score(self.hwords[other_word][0], self.hwords[other_word][1]))
+                # DIC score for current num_states
+                dic_score = logL - np.mean(other_logL)
+                # Higher value of dic_score is better
+                if dic_score > best_score:
+                    # Update the best/highest score
+                    best_score =  dic_score
+                    # Assign the hmm_model with num_states number of states as best model
+                    best_model =  hmm_model
+            except:
+                pass
+        # return the model with highest/best dic_score
+        return best_model if best_model is not None else self.base_model(self.n_constant)
 
 
 class SelectorCV(ModelSelector):
@@ -105,5 +162,42 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        # implement model selection using CV
+        # Initialize
+        best_score = float("-inf")
+        best_num_States = None
+
+        # iterate from the min number of components to max number of components+1
+        for num_states in range(self.min_n_components, self.max_n_components+1):
+            # kist of logL scores for different folds sets generated for this num_states
+            logL_scores = []
+            try:
+                # Split into KFolds only when there is sufficient data
+                if len(self.sequences) > 2:
+                    split_method = KFold(n_splits = 3, shuffle = False, random_state = None)
+                    for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                        # generate train, test folds
+                        train_X, train_lengths = combine_sequences(cv_train_idx, self.sequences)
+                        test_X, test_lengths = combine_sequences(cv_test_idx, self.sequences)
+                        # fit model against train folds
+                        hmm_model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
+                                    random_state=self.random_state, verbose=False).fit(train_X, train_lengths)
+                        # Score aginst test folds
+                        logL_scores.append(hmm_model.score(test_X, test_lengths))
+                else:
+                    # fit model against all the data
+                    hmm_model = self.base_model(num_states)
+                    logL_scores.append(hmm_model.score(self.X, self.lengths))
+
+                # mean of LogL for this num_states
+                mean_logL = np.mean(logL_scores)
+            except:
+                pass
+
+            # update best_score and best_num_states 
+            if mean_logL > best_score:
+                best_score = mean_logL
+                best_num_States  = num_states
+
+        # return the model for best_num_states (with best/highest mean_logL) fitted over all the data points
+        return self.base_model(best_num_States) if best_num_States is not None else self.base_model(self.n_constant)
