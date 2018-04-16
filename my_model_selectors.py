@@ -76,7 +76,7 @@ class SelectorBIC(ModelSelector):
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on BIC scores
+        # implement model selection based on BIC scores
         best_score = float("inf")
         best_model = None
         # The current word data - self.X, has numbr of data rows as the first dimension and the the second dimension /column is features.
@@ -171,6 +171,7 @@ class SelectorCV(ModelSelector):
         for num_states in range(self.min_n_components, self.max_n_components+1):
             # kist of logL scores for different folds sets generated for this num_states
             logL_scores = []
+            mean_logL = float("-inf")
             try:
                 # Split into KFolds only when there is sufficient data
                 if len(self.sequences) > 2:
